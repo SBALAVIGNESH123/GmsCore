@@ -63,8 +63,9 @@ public class BluetoothWearableConnection extends WearableConnection {
         // Use reflection to call wire.parseFrom() to work around Wire version incompatibility
         // The inherited 'wire' instance from WearableConnection uses Wire 1.6.1 API
         try {
-            Method parseFrom = wire.getClass().getMethod("parseFrom", byte[].class, Class.class);
-            return (MessagePiece) parseFrom.invoke(wire, bytes, MessagePiece.class);
+//            Method parseFrom = wire.getClass().getMethod("parseFrom", byte[].class, Class.class);
+//            return (MessagePiece) parseFrom.invoke(wire, bytes, MessagePiece.class);
+            return MessagePiece.ADAPTER.decode(bytes);
         } catch (Exception e) {
             throw new IOException("Failed to deserialize MessagePiece: " + e.getMessage(), e);
         }

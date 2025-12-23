@@ -53,6 +53,7 @@ import org.microg.wearable.proto.AppKeys;
 import org.microg.wearable.proto.Connect;
 import org.microg.wearable.proto.FetchAsset;
 import org.microg.wearable.proto.FilePiece;
+import org.microg.wearable.proto.MessagePiece;
 import org.microg.wearable.proto.Request;
 import org.microg.wearable.proto.RootMessage;
 import org.microg.wearable.proto.SetAsset;
@@ -82,7 +83,11 @@ public class WearableImpl {
     private static final String TAG = "GmsWear";
     // Standard Serial Port Profile UUID for Bluetooth Classic
     private static final UUID UUID_WEAR = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
-
+/*
+* for RFCOMM
+* also found UUID 5e8945b0-9525-11e3-a5e2-0800200c9a66
+* at BluetoothClientConnection.constructor in SocketConnectAlarm
+* */
     private static final int WEAR_TCP_PORT = 5601;
 
     private final Context context;
@@ -598,7 +603,7 @@ public class WearableImpl {
     private IWearableListener getListener(String packageName, String action, Uri uri) {
         Intent intent = new Intent(action);
         intent.setPackage(packageName);
-                intent.setData(uri);
+        intent.setData(uri);
 
         return RemoteListenerProxy.get(context, intent, IWearableListener.class, "com.google.android.gms.wearable.BIND_LISTENER");
     }
@@ -639,7 +644,7 @@ public class WearableImpl {
             connection = activeConnections.get(nodeId);
             activeConnections.remove(nodeId);
         }
-        
+
         if (connection != null) {
             try {
                 connection.close();
@@ -651,7 +656,7 @@ public class WearableImpl {
                 sct = null;
             }
         }
-        
+
         for (ConnectionConfiguration config : getConfigurations()) {
             if (nodeId.equals(config.nodeId) || nodeId.equals(config.peerNodeId)) {
                 config.connected = false;
@@ -727,100 +732,155 @@ public class WearableImpl {
                     if (adapter != null && adapter.isEnabled()) {
                         // Check BLUETOOTH_CONNECT permission for Android 12+
                         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                            if (context.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) 
+                            if (context.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
                                     != android.content.pm.PackageManager.PERMISSION_GRANTED) {
                                 Log.w(TAG, "BLUETOOTH_CONNECT permission not granted, skipping device scan");
                                 Thread.sleep(10000);
                                 continue;
                             }
                         }
-                        
+
                         Set<BluetoothDevice> bondedDevices = adapter.getBondedDevices();
                         if (bondedDevices != null) {
                             for (BluetoothDevice device : bondedDevices) {
-                            // Synchronized check for existing connections to this device
-                            boolean isConnected = false;
-                            
-                            // Check active connections
-                            synchronized (activeConnections) {
-                                for (WearableConnection conn : activeConnections.values()) {
-                                    if (conn instanceof BluetoothWearableConnection) {
-                                        if (((BluetoothWearableConnection) conn).getRemoteAddress().equals(device.getAddress())) {
-                                            isConnected = true;
-                                            break;
+                                // Synchronized check for existing connections to this device
+                                boolean isConnected = false;
+
+                                // Check active connections
+                                synchronized (activeConnections) {
+                                    for (WearableConnection conn : activeConnections.values()) {
+                                        if (conn instanceof BluetoothWearableConnection) {
+                                            if (((BluetoothWearableConnection) conn).getRemoteAddress().equals(device.getAddress())) {
+                                                isConnected = true;
+                                                break;
+                                            }
+                                        } else if (conn instanceof BLEWearableConnection) {
+                                            if (((BLEWearableConnection) conn).getRemoteAddress().equals(device.getAddress())) {
+                                                isConnected = true;
+                                                break;
+                                            }
                                         }
                                     }
                                 }
-                            }
-                            
-                            // Check pending connections (race condition fix)
-                            if (!isConnected && pendingConnections.contains(device.getAddress())) {
-                                isConnected = true; 
-                            }
 
-                            if (isConnected) {
-                                continue;
-                            }
-                            
-                            pendingConnections.add(device.getAddress());
-                            Log.d(TAG, "Attempting BT connection to " + device.getName() + " (" + device.getAddress() + ")");
-                            
-                            BluetoothSocket socket = null;
-                            try {
-                                // Create RFCOMM socket using SPP UUID
-                                socket = device.createRfcommSocketToServiceRecord(UUID_WEAR);
-                                socket.connect();
-                                
-                                if (socket.isConnected()) {
-                                    Log.d(TAG, "Successfully connected via Bluetooth to " + device.getName());
-                                    
-                                    // Create wearable connection wrapper
-                                    ConnectionConfiguration config = new ConnectionConfiguration(device.getName(), device.getAddress(), 3, 0, true);
-                                    MessageHandler messageHandler = new MessageHandler(context, WearableImpl.this, config);
-                                    BluetoothWearableConnection connection = new BluetoothWearableConnection(socket, messageHandler);
-                                    
-                                    // Enable auto-close on error
-                                    // connection.setListener(messageHandler); // Implied by constructor
+                                // Check is device already connected
+                                if (!isConnected && pendingConnections.contains(device.getAddress())) {
+                                    isConnected = true;
+                                }
 
-                                    // Start message processing thread
-                                    new Thread(connection).start();
-                                    
+                                if (isConnected) {
+                                    continue;
+                                }
+
+                                pendingConnections.add(device.getAddress());
+                                Log.d(TAG, "Attempting BT connection to " + device.getName() + " (" + device.getAddress() + ")");
+
+                                try {
+                                    BLEWearableConnection bleConnection = null;
                                     try {
-                                        // Send our identity to the watch
-                                        String localId = getLocalNodeId();
-                                        
-                                        // TODO: We should probably get the actual device name from Settings?
-                                        // Using "Phone" for now as it seems to be the default GMS behavior.
-                                        connection.writeMessage(
-                                            new RootMessage.Builder()
-                                                .connect(new Connect.Builder()
-                                                    .id(localId)
-                                                    .name("Phone")
-                                                    .networkId(localId)
-                                                    .peerAndroidId(0L)
-                                                    .peerVersion(2) // Need at least version 2 for modern WearOS
-                                                    .build())
-                                                .build()
+                                        Log.d(TAG, "BLE : connection trying");
+                                        ConnectionConfiguration bleConfig = new ConnectionConfiguration(device.getName(), device.getAddress(), 3, 0, true, getLocalNodeId());
+                                        MessageHandler bleMessageHandler = new MessageHandler(context, WearableImpl.this, bleConfig);
+                                        bleConnection = new BLEWearableConnection(device, context, bleMessageHandler);
+
+                                        new Thread(bleConnection).start();
+
+//                                        String localId = getLocalNodeId();
+
+                                        int waitCount = 0;
+                                        while (!bleConnection.isFullyInitialized() && waitCount < 300) { // 3 seconds max
+                                            try {
+                                                Thread.sleep(10);
+                                                waitCount++;
+                                            } catch (InterruptedException i) {
+                                                Thread.currentThread().interrupt();
+                                                break;
+                                            }
+                                        }
+
+                                        if (!bleConnection.isFullyInitialized()) {
+                                            Log.w(TAG, "BLE: Connection initialization timeout");
+                                            bleConnection.close();
+                                            throw new IOException("BLE initialization timeout");
+                                        }
+
+                                        bleConnection.writeMessage(
+                                                new RootMessage.Builder().connect(
+                                                        new Connect.Builder()
+                                                                .id(getLocalNodeId())
+                                                                .name("Phone")
+                                                                .networkId(getLocalNodeId())
+                                                                .peerAndroidId(0L)
+                                                                .peerVersion(2)
+                                                                .build()
+                                                ).build()
                                         );
+                                        Log.d(TAG, "BLE : connection established to " + device.getName());
+                                        continue;
                                     } catch (IOException e) {
-                                        Log.w(TAG, "Handshake failed, closing connection", e);
-                                        connection.close();
+                                        Log.d(TAG, "BLE : connection failed.");
+                                        if (bleConnection != null) bleConnection.close();
                                     }
-                                }
-                            } catch (IOException e) {
-                                Log.d(TAG, "BT connection failed: " + e.getMessage());
-                                if (socket != null) {
-                                    try {
-                                        socket.close();
-                                    } catch (IOException closeErr) {
-                                        // Ignore
-                                    }
-                                }
-                            } finally {
-                                pendingConnections.remove(device.getAddress());
-                            }
 
-                        }
+
+                                    BluetoothSocket socket = null;
+                                    try {
+                                        // Create RFCOMM socket using SPP UUID
+                                        socket = device.createRfcommSocketToServiceRecord(UUID_WEAR);
+                                        socket.connect();
+
+                                        if (socket.isConnected()) {
+                                            Log.d(TAG, "RFCOMM : Successfully connected via Bluetooth to " + device.getName());
+
+                                            // Create wearable connection wrapper
+                                            ConnectionConfiguration config = new ConnectionConfiguration(device.getName(), device.getAddress(), 3, 0, true, getLocalNodeId());
+                                            MessageHandler messageHandler = new MessageHandler(context, WearableImpl.this, config);
+                                            BluetoothWearableConnection connection = new BluetoothWearableConnection(socket, messageHandler);
+
+                                            // Enable auto-close on error
+                                            // connection.setListener(messageHandler); // Implied by constructor
+
+                                            // Start message processing thread
+                                            new Thread(connection).start();
+
+                                            try {
+                                                // Send our identity to the watch
+//                                                String localId = getLocalNodeId();
+
+                                                // TODO: We should probably get the actual device name from Settings?
+                                                // Using "Phone" for now as it seems to be the default GMS behavior.
+                                                connection.writeMessage(
+                                                        new RootMessage.Builder()
+                                                                .connect(new Connect.Builder()
+                                                                        .id(getLocalNodeId())
+                                                                        .name("Phone")
+                                                                        .networkId(getLocalNodeId())
+                                                                        .peerAndroidId(0L)
+                                                                        .peerVersion(2) // Need at least version 2 for modern WearOS
+                                                                        .build())
+                                                                .build()
+                                                );
+                                            } catch (IOException e) {
+                                                Log.w(TAG, "RFCOMM : Handshake failed, closing connection", e);
+                                                connection.close();
+                                            }
+                                        }
+                                    } catch (IOException e){
+                                        Log.d(TAG, "RFCOMM : BT connection failed: " + e.getMessage());
+                                        if (socket != null) {
+                                            try {
+                                                socket.close();
+                                            } catch (IOException closeErr) {
+                                                // Ignore
+                                            }
+                                        }
+                                    }
+
+                                } finally {
+                                    pendingConnections.remove(device.getAddress());
+                                }
+
+                            }
                         }
                     }
                 } catch (Exception e) {
@@ -837,3 +897,4 @@ public class WearableImpl {
         }
     }
 }
+
