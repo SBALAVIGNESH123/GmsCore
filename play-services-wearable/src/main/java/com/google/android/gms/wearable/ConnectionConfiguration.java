@@ -41,8 +41,6 @@ public class ConnectionConfiguration extends AutoSafeParcelable {
     public boolean btlePriority = true;
     @SafeParceled(10)
     public String nodeId;
-    @SafeParceled(11)
-    public long androidId = 0L;
 
     private ConnectionConfiguration() {
         name = address = null;
@@ -67,16 +65,6 @@ public class ConnectionConfiguration extends AutoSafeParcelable {
         this.nodeId = nodeId;
     }
 
-    public ConnectionConfiguration(String name, String address, int type, int role, boolean enabled, String nodeId, long androidId) {
-        this.name = name;
-        this.address = address;
-        this.type = type;
-        this.role = role;
-        this.enabled = enabled;
-        this.nodeId = nodeId;
-	this.androidId = androidId;
-    }
-
     @Override
     public String toString() {
         final StringBuilder sb = new StringBuilder("ConnectionConfiguration{");
@@ -89,10 +77,10 @@ public class ConnectionConfiguration extends AutoSafeParcelable {
         sb.append(", peerNodeId='").append(peerNodeId).append('\'');
         sb.append(", btlePriority=").append(btlePriority);
         sb.append(", nodeId='").append(nodeId).append('\'');
-        sb.append(", androidId='").append(androidId);
         sb.append('}');
         return sb.toString();
     }
+
 
     public static final Creator<ConnectionConfiguration> CREATOR = new AutoCreator<ConnectionConfiguration>(ConnectionConfiguration.class);
 }

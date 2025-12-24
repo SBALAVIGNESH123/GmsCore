@@ -23,6 +23,7 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.util.Log;
 
+import androidx.annotation.RequiresPermission;
 import androidx.core.app.ActivityCompat;
 
 import org.microg.wearable.WearableConnection;
@@ -36,29 +37,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class BLEWearableConnection extends WearableConnection {
     private static final String TAG = "BLEWearConnection";
     private static final int MAX_PIECE_SIZE = 20 * 1024 * 1024; // 20MB limit
-    private static final String PREFS_NAME = "BLEWearableConnection.Prefs";
-    private static final String PREF_PAIRING_CONFIRMED = "pairing_confirmed";
 
-    private static final UUID SERVICE_UUID = UUID.fromString("0000fcf1-0000-1000-8000-00805f9b34fb");
-    private static final UUID WRITE_CHAR_UUID = UUID.fromString("07b18b65-9076-4050-a754-21adc1e12422");
-    private static final UUID READ_CHAR_UUID = UUID.fromString("280adb07-4033-40c4-b2c0-8a3c75df4165");
-    private static final UUID RECONNECT_CHAR_UUID = UUID.fromString("ffeddd90-74bc-11e4-82f8-0800200c9a66");
-    private static final UUID RESET_CHAR_UUID = UUID.fromString("0eb6f3c9-df9c-4679-bcae-06ba51f7920f");
-    private static final UUID PAIR_CONFIRM_CHAR_UUID = UUID.fromString("1699e0b2-357c-4c98-8007-7a50b5b3e771");
-    private static final UUID DECOMMISSION_CHAR_UUID = UUID.fromString("65bbb4b0-c1c7-11e4-8dfc-aa07a5b093db");
+    private static final UUID SERVICE_UUID = UUID.fromString("1c81447b-f48d-4d17-a606-3ff36527045a");
+    private static final UUID READ_CHAR_UUID = UUID.fromString("6fcfb474-ce57-48ff-a4ce-b43767d6d04a");
+    private static final UUID WRITE_CHAR_UUID = UUID.fromString("b2ae0493-d87f-475c-b656-5840e0a13fc8");
     private static final UUID NOTIFY_DESCRIPTOR = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
 
     private final Context context;
     private final BluetoothGatt gatt;
     private final String remoteAddress;
-
-    // Characteristics
-    private BluetoothGattCharacteristic writeCharacteristic;
-    private BluetoothGattCharacteristic incomingCharacteristic;
-    private BluetoothGattCharacteristic reconnectCharacteristic;
-    private BluetoothGattCharacteristic resetCharacteristic;
-    private BluetoothGattCharacteristic pairConfirmCharacteristic;
-    private BluetoothGattCharacteristic decommissionCharacteristic;
 
     private volatile boolean connected = false;
     private final CountDownLatch connectionLatch = new CountDownLatch(1);
@@ -75,16 +62,9 @@ public class BLEWearableConnection extends WearableConnection {
     private final AtomicBoolean latchReleased = new AtomicBoolean(false);
     private volatile boolean fullyInitialized = false;
 
-    // Setup state machine
-    private enum SetupState {
-        CHECKING_PAIRING,
-        CHECKING_DECOMMISSION,
-        SUBSCRIBING_INCOMING,
-        SUBSCRIBING_RECONNECT,
-        SUBSCRIBING_RESET,
-        SENDING_RESET_SIGNAL,
-        COMPLETE
-    }
+    private BluetoothGattCharacteristic writeCharacteristic;
+    private BluetoothGattCharacteristic incomingCharacteristic;
+
     private volatile SetupState setupState = SetupState.CHECKING_PAIRING;
 
     private void releaseLatch() {
@@ -143,13 +123,8 @@ public class BLEWearableConnection extends WearableConnection {
             Log.d(TAG, "Connection state change: status=" + status + ", newState=" + newState);
 
             if (newState == BluetoothProfile.STATE_CONNECTED && status == BluetoothGatt.GATT_SUCCESS) {
-                Log.d(TAG, "Connected to GATT, requesting MTU...");
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    if (!g.requestMtu(83)) // MTU 83 as per Wear OS implementation
-                        g.discoverServices();
-                } else {
-                    g.discoverServices();
-                }
+                boolean services = g.discoverServices();
+                Log.d(TAG, "Discrovering services: " + services);
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 Log.d(TAG, "Disconnected from GATT");
                 connected = false;
@@ -176,12 +151,13 @@ public class BLEWearableConnection extends WearableConnection {
             g.discoverServices();
         }
 
+        @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
         @Override
         public void onServicesDiscovered(BluetoothGatt g, int status) {
             Log.d(TAG, "Services discovered: status=" + status);
 
             if (status != BluetoothGatt.GATT_SUCCESS) {
-                Log.w(TAG, "Service discovery failed");
+                Log.w(TAG, "Service discovery failed: " + status);
                 g.disconnect();
                 releaseLatch();
                 return;
@@ -199,68 +175,37 @@ public class BLEWearableConnection extends WearableConnection {
                 return;
             }
 
+            BluetoothGattCharacteristic characteristic = wearService.getCharacteristic(READ_CHAR_UUID);
+
+            if (characteristic == null) return;
+
+            g.readCharacteristic(characteristic);
+
             // Get all characteristics
             writeCharacteristic = wearService.getCharacteristic(WRITE_CHAR_UUID);
             incomingCharacteristic = wearService.getCharacteristic(READ_CHAR_UUID);
-            reconnectCharacteristic = wearService.getCharacteristic(RECONNECT_CHAR_UUID);
-            resetCharacteristic = wearService.getCharacteristic(RESET_CHAR_UUID);
-            pairConfirmCharacteristic = wearService.getCharacteristic(PAIR_CONFIRM_CHAR_UUID);
-            decommissionCharacteristic = wearService.getCharacteristic(DECOMMISSION_CHAR_UUID);
 
             // Log what we found
             Log.d(TAG, "Characteristics found:");
             Log.d(TAG, "  Write: " + (writeCharacteristic != null));
             Log.d(TAG, "  Incoming: " + (incomingCharacteristic != null));
-            Log.d(TAG, "  Reconnect: " + (reconnectCharacteristic != null));
-            Log.d(TAG, "  Reset: " + (resetCharacteristic != null));
-            Log.d(TAG, "  PairConfirm: " + (pairConfirmCharacteristic != null));
-            Log.d(TAG, "  Decommission: " + (decommissionCharacteristic != null));
 
             // Check for required characteristics
-            if (writeCharacteristic == null || incomingCharacteristic == null ||
-                    pairConfirmCharacteristic == null || decommissionCharacteristic == null) {
+            if (writeCharacteristic == null || incomingCharacteristic == null) {
                 Log.e(TAG, "Missing required characteristics!");
                 g.disconnect();
                 releaseLatch();
                 return;
             }
 
-            // Start setup sequence: check pairing first
-            setupState = SetupState.CHECKING_PAIRING;
-            checkPairingConfirmation(g);
-        }
-
-        private void checkPairingConfirmation(BluetoothGatt g) {
-            Log.d(TAG, "Checking pairing confirmation...");
-            SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-
-            if (!prefs.getBoolean(PREF_PAIRING_CONFIRMED, false)) {
-                Log.d(TAG, "Pairing not confirmed, reading pairing characteristic...");
-                if (!g.readCharacteristic(pairConfirmCharacteristic)) {
-                    Log.e(TAG, "Failed to read pairing characteristic");
-                    g.disconnect();
-                    releaseLatch();
-                }
-            } else {
-                Log.d(TAG, "Pairing already confirmed, checking decommission status...");
-                setupState = SetupState.CHECKING_DECOMMISSION;
-                checkDecommissionStatus(g);
-            }
-        }
-
-        private void checkDecommissionStatus(BluetoothGatt g) {
-            Log.d(TAG, "Checking decommission status...");
-            if (!g.readCharacteristic(decommissionCharacteristic)) {
-                Log.e(TAG, "Failed to read decommission characteristic");
-                g.disconnect();
-                releaseLatch();
-            }
         }
 
         @Override
         public void onCharacteristicRead(BluetoothGatt g, BluetoothGattCharacteristic characteristic, int status) {
             UUID uuid = characteristic.getUuid();
             Log.d(TAG, "Characteristic read: " + uuid + " status=" + status);
+
+            Log.d(TAG, "READ_CHAR_UUID = " + READ_CHAR_UUID + ", UUID = " + uuid);
 
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 Log.w(TAG, "Read failed for " + uuid);
@@ -276,47 +221,6 @@ public class BLEWearableConnection extends WearableConnection {
                 releaseLatch();
                 return;
             }
-
-            if (PAIR_CONFIRM_CHAR_UUID.equals(uuid)) {
-                handlePairingConfirmationRead(g, value);
-            } else if (DECOMMISSION_CHAR_UUID.equals(uuid)) {
-                handleDecommissionRead(g, value);
-            }
-        }
-
-        private void handlePairingConfirmationRead(BluetoothGatt g, byte[] value) {
-            if (value.length == 1 && value[0] == 1) {
-                Log.d(TAG, "Pairing confirmed!");
-                SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-                prefs.edit().putBoolean(PREF_PAIRING_CONFIRMED, true).apply();
-
-                setupState = SetupState.CHECKING_DECOMMISSION;
-                checkDecommissionStatus(g);
-            } else {
-                Log.w(TAG, "Invalid pairing confirmation value: " + Arrays.toString(value));
-                g.disconnect();
-                releaseLatch();
-            }
-        }
-
-        private void handleDecommissionRead(BluetoothGatt g, byte[] value) {
-            if (value.length != 1) {
-                Log.w(TAG, "Invalid decommission value length: " + value.length);
-                g.disconnect();
-                releaseLatch();
-                return;
-            }
-
-            if (value[0] == 1) {
-                Log.w(TAG, "Watch needs to be decommissioned!");
-                g.disconnect();
-                releaseLatch();
-                return;
-            }
-
-            Log.d(TAG, "Watch is not decommissioned, proceeding with setup");
-            setupState = SetupState.SUBSCRIBING_INCOMING;
-            enableNotification(g, incomingCharacteristic);
         }
 
         @Override
@@ -330,78 +234,13 @@ public class BLEWearableConnection extends WearableConnection {
                 releaseLatch();
                 return;
             }
-
-            // State machine for setup sequence
-            switch (setupState) {
-                case SUBSCRIBING_INCOMING:
-                    if (READ_CHAR_UUID.equals(charUuid)) {
-                        Log.d(TAG, "Incoming subscribed, subscribing to reconnect...");
-                        setupState = SetupState.SUBSCRIBING_RECONNECT;
-                        if (reconnectCharacteristic != null) {
-                            enableNotification(g, reconnectCharacteristic);
-                        } else {
-                            // Skip to reset if reconnect not available
-                            setupState = SetupState.SUBSCRIBING_RESET;
-                            subscribeToResetOrComplete(g);
-                        }
-                    }
-                    break;
-
-                case SUBSCRIBING_RECONNECT:
-                    if (RECONNECT_CHAR_UUID.equals(charUuid)) {
-                        Log.d(TAG, "Reconnect subscribed, checking reset...");
-                        setupState = SetupState.SUBSCRIBING_RESET;
-                        subscribeToResetOrComplete(g);
-                    }
-                    break;
-
-                case SUBSCRIBING_RESET:
-                    if (RESET_CHAR_UUID.equals(charUuid)) {
-                        Log.d(TAG, "Reset subscribed, sending reset signal...");
-                        setupState = SetupState.SENDING_RESET_SIGNAL;
-                        sendResetSignal(g);
-                    }
-                    break;
-            }
-        }
-
-        private void subscribeToResetOrComplete(BluetoothGatt g) {
-            if (resetCharacteristic != null) {
-                Log.d(TAG, "Attempting to subscribe to reset characteristic");
-                if (!enableNotification(g, resetCharacteristic)) {
-                    Log.w(TAG, "Reset subscription failed, completing anyway");
-                    completeSetup();
-                }
-            } else {
-                Log.d(TAG, "No reset characteristic, completing setup");
-                completeSetup();
-            }
-        }
-
-        private void sendResetSignal(BluetoothGatt g) {
-            if (resetCharacteristic == null) {
-                completeSetup();
-                return;
-            }
-
-            // Send MTU size as reset signal (mtu - 3 for ATT overhead)
-            int mtuValue = mtu;
-            Log.d(TAG, "Sending reset signal with MTU=" + mtuValue);
-
-            byte[] resetValue = String.valueOf(mtuValue).getBytes();
-            resetCharacteristic.setValue(resetValue);
-            resetCharacteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
-
-            if (!g.writeCharacteristic(resetCharacteristic)) {
-                Log.w(TAG, "Failed to send reset signal");
-            }
         }
 
         @Override
         public void onCharacteristicWrite(BluetoothGatt g, BluetoothGattCharacteristic characteristic, int status) {
             UUID uuid = characteristic.getUuid();
 
-            if (RESET_CHAR_UUID.equals(uuid)) {
+            if (WRITE_CHAR_UUID.equals(uuid)) {
                 Log.d(TAG, "Reset signal sent: status=" + status);
                 if (status == BluetoothGatt.GATT_SUCCESS) {
                     completeSetup();
@@ -425,7 +264,6 @@ public class BLEWearableConnection extends WearableConnection {
         }
 
         private void completeSetup() {
-            setupState = SetupState.COMPLETE;
             Log.d(TAG, "BLE connection fully initialized!");
             connected = true;
             fullyInitialized = true;

@@ -56,23 +56,9 @@ public class ConfigurationDatabaseHelper extends SQLiteOpenHelper {
         int enabled = cursor.getInt(cursor.getColumnIndexOrThrow("connectionEnabled"));
         String nodeId = cursor.getString(cursor.getColumnIndexOrThrow("nodeId"));
 
-	// trying to add androidId here
-	long androidId = 0L;
-	int androidIndex = cursor.getColumnIndex("androidId");
-	if (androidIndex >= 0 && !cursor.isNull(androidIndex)) {
-		String androidIdStr = cursor.getString(androidIndex);
-		if(androidIdStr != null && !androidIdStr.isEmpty()){
-			try {
-				androidId = Long.parseLong(androidIdStr);
-			} catch (NumberFormatException e) {
-				androidId = 0L;
-			}
-		}
-	}
-
         if (NULL_STRING.equals(name)) name = null;
         if (NULL_STRING.equals(pairedBtAddress)) pairedBtAddress = null;
-        return new ConnectionConfiguration(name, pairedBtAddress, connectionType, role, enabled > 0, nodeId, androidId);
+        return new ConnectionConfiguration(name, pairedBtAddress, connectionType, role, enabled > 0, nodeId);
     }
 
     public ConnectionConfiguration getConfiguration(String name) {
@@ -108,7 +94,6 @@ public class ConfigurationDatabaseHelper extends SQLiteOpenHelper {
         contentValues.put("role", config.role);
         contentValues.put("connectionEnabled", true);
         contentValues.put("nodeId", config.nodeId);
-        contentValues.put("androidId", String.valueOf(config.androidId));
         if (oldNodeId == null) {
             getWritableDatabase().insert(TABLE_NAME, null, contentValues);
         } else {

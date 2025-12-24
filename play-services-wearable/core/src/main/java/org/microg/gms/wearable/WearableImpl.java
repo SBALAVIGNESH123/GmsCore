@@ -775,17 +775,16 @@ public class WearableImpl {
                                 pendingConnections.add(device.getAddress());
                                 Log.d(TAG, "Attempting BT connection to " + device.getName() + " (" + device.getAddress() + ")");
 
+                                String nodeId = getLocalNodeId();
                                 try {
                                     BLEWearableConnection bleConnection = null;
                                     try {
                                         Log.d(TAG, "BLE : connection trying");
-                                        ConnectionConfiguration bleConfig = new ConnectionConfiguration(device.getName(), device.getAddress(), 3, 0, true, getLocalNodeId());
-                                        MessageHandler bleMessageHandler = new MessageHandler(context, WearableImpl.this, bleConfig);
+                                        ConnectionConfiguration bleConfig = new ConnectionConfiguration(device.getName(), device.getAddress(), 3, 0, true, nodeId);
+                                        MessageHandler bleMessageHandler = new MessageHandler(context, WearableImpl.this, bleConfig, 2);
                                         bleConnection = new BLEWearableConnection(device, context, bleMessageHandler);
 
                                         new Thread(bleConnection).start();
-
-//                                        String localId = getLocalNodeId();
 
                                         int waitCount = 0;
                                         while (!bleConnection.isFullyInitialized() && waitCount < 300) { // 3 seconds max
@@ -807,9 +806,9 @@ public class WearableImpl {
                                         bleConnection.writeMessage(
                                                 new RootMessage.Builder().connect(
                                                         new Connect.Builder()
-                                                                .id(getLocalNodeId())
+                                                                .id(nodeId)
                                                                 .name("Phone")
-                                                                .networkId(getLocalNodeId())
+                                                                .networkId(nodeId)
                                                                 .peerAndroidId(0L)
                                                                 .peerVersion(2)
                                                                 .build()
@@ -825,6 +824,7 @@ public class WearableImpl {
 
                                     BluetoothSocket socket = null;
                                     try {
+                                        Log.d(TAG, "RFCOMM : connection trying");
                                         // Create RFCOMM socket using SPP UUID
                                         socket = device.createRfcommSocketToServiceRecord(UUID_WEAR);
                                         socket.connect();
@@ -833,7 +833,7 @@ public class WearableImpl {
                                             Log.d(TAG, "RFCOMM : Successfully connected via Bluetooth to " + device.getName());
 
                                             // Create wearable connection wrapper
-                                            ConnectionConfiguration config = new ConnectionConfiguration(device.getName(), device.getAddress(), 3, 0, true, getLocalNodeId());
+                                            ConnectionConfiguration config = new ConnectionConfiguration(device.getName(), device.getAddress(), 3, 0, true, nodeId);
                                             MessageHandler messageHandler = new MessageHandler(context, WearableImpl.this, config);
                                             BluetoothWearableConnection connection = new BluetoothWearableConnection(socket, messageHandler);
 
@@ -852,9 +852,9 @@ public class WearableImpl {
                                                 connection.writeMessage(
                                                         new RootMessage.Builder()
                                                                 .connect(new Connect.Builder()
-                                                                        .id(getLocalNodeId())
+                                                                        .id(nodeId)
                                                                         .name("Phone")
-                                                                        .networkId(getLocalNodeId())
+                                                                        .networkId(nodeId)
                                                                         .peerAndroidId(0L)
                                                                         .peerVersion(2) // Need at least version 2 for modern WearOS
                                                                         .build())
