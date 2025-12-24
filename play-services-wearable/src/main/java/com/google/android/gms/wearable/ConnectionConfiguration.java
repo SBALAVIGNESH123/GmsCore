@@ -81,5 +81,6 @@ public class ConnectionConfiguration extends AutoSafeParcelable {
         return sb.toString();
     }
 
+
     public static final Creator<ConnectionConfiguration> CREATOR = new AutoCreator<ConnectionConfiguration>(ConnectionConfiguration.class);
 }

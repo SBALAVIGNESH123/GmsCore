@@ -48,22 +48,51 @@ public class MessageHandler extends ServerMessageListener {
     private final String oldConfigNodeId;
     private String peerNodeId;
 
-    public MessageHandler(Context context, WearableImpl wearable, ConnectionConfiguration config) {
-        this(wearable, config, Build.MODEL, config.nodeId, SettingsContract.getSettings(context, SettingsContract.CheckIn.INSTANCE.getContentUri(context), new String[]{SettingsContract.CheckIn.ANDROID_ID}, cursor -> cursor.getLong(0)));
+    public MessageHandler(Context context, WearableImpl wearable, ConnectionConfiguration config, int peerVer) {
+        this(
+                wearable,
+                config,
+                Build.MODEL,
+                config.nodeId,
+                SettingsContract.getSettings(
+                        context,
+                        SettingsContract.CheckIn.INSTANCE.getContentUri(context),
+                        new String[]{SettingsContract.CheckIn.ANDROID_ID},
+                        cursor -> cursor.getLong(0)
+                ),
+                peerVer
+        );
     }
 
-    private MessageHandler(WearableImpl wearable, ConnectionConfiguration config, String name, String networkId, long androidId) {
-        super(new Connect.Builder()
-                .name(name)
-                .id(wearable.getLocalNodeId())
-                .networkId(networkId)
-                .peerAndroidId(androidId)
-                .unknown4(3)
-                .peerVersion(1)
-                .build());
-        this.wearable = wearable;
-        this.oldConfigNodeId = config.nodeId;
+    public MessageHandler(Context context, WearableImpl wearable, ConnectionConfiguration config) {
+        this(
+                wearable,
+                config,
+                Build.MODEL,
+                config.nodeId,
+                SettingsContract.getSettings(
+                        context,
+                        SettingsContract.CheckIn.INSTANCE.getContentUri(context),
+                        new String[]{SettingsContract.CheckIn.ANDROID_ID},
+                        cursor -> cursor.getLong(0)
+                ),
+                1
+        );
     }
+
+    private MessageHandler(WearableImpl wearable, ConnectionConfiguration config, String name, String networkId, long androidId, int peerVer) {
+	    super(new Connect.Builder()
+			    .name(name)
+			    .id(wearable.getLocalNodeId())
+			    .networkId(networkId)
+			    .peerAndroidId(androidId)
+			    .unknown4(3)
+			    .peerVersion(peerVer)
+			    .build());
+	    this.wearable = wearable;
+	    this.oldConfigNodeId = config.nodeId;
+    }
+
 
     @Override
     public void onConnect(Connect connect) {

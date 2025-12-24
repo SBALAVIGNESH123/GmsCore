@@ -55,6 +55,7 @@ public class ConfigurationDatabaseHelper extends SQLiteOpenHelper {
         int role = cursor.getInt(cursor.getColumnIndexOrThrow("role"));
         int enabled = cursor.getInt(cursor.getColumnIndexOrThrow("connectionEnabled"));
         String nodeId = cursor.getString(cursor.getColumnIndexOrThrow("nodeId"));
+
         if (NULL_STRING.equals(name)) name = null;
         if (NULL_STRING.equals(pairedBtAddress)) pairedBtAddress = null;
         return new ConnectionConfiguration(name, pairedBtAddress, connectionType, role, enabled > 0, nodeId);
