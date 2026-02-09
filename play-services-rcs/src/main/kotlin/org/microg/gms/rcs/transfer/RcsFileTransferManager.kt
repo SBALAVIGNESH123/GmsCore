@@ -91,8 +91,21 @@ class RcsFileTransferManager(private val context: Context) {
             
             val encryptedChunk = securityManager.encryptData(chunk)
             
+            // diamond-polish: Use the Provisioned FT URL, don't hardcode Google Jibe.
+            // If no URL is provisioned, we can't upload.
+            val uploadUrl = org.microg.gms.rcs.config.RcsConfigManager.getInstance(context)
+                .getString("ft_http_cs_uri", "")
+            
+            if (uploadUrl.isBlank()) {
+                return FileTransferResult.failure(state.transferId, "No File Transfer URL provisioned")
+            }
+
+            // Append chunk endpoint if needed, depending on spec. 
+            // Usually the config URL is the base.
+            val fullUrl = if (uploadUrl.endsWith("/")) "${uploadUrl}upload/v1/chunk" else "${uploadUrl}/upload/v1/chunk"
+
             val result = httpClient.executePostJson(
-                url = "https://rcsjibe.googleapis.com/upload/v1/chunk",
+                url = fullUrl,
                 jsonData = mapOf(
                     "transferId" to state.transferId,
                     "chunkIndex" to chunkIndex,

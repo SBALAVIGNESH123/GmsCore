@@ -44,10 +44,14 @@ class RcsStateReceiver : BroadcastReceiver() {
     private fun handleBootCompleted(context: Context) {
         Log.d(TAG, "Boot completed, checking RCS state")
         
+        // diamond-polish: Actually start the service if provisioned, don't just log it.
         val provisioningManager = RcsProvisioningManager(context)
         
         if (provisioningManager.isProvisioned()) {
-            Log.d(TAG, "RCS was previously provisioned, registration will resume")
+            Log.i(TAG, "RCS was previously provisioned, starting RcsService to resume connection")
+            startRcsService(context)
+        } else {
+             Log.d(TAG, "RCS not provisioned, waiting for user/app start")
         }
     }
 
@@ -55,18 +59,18 @@ class RcsStateReceiver : BroadcastReceiver() {
         val simState = intent.getStringExtra("ss")
         Log.d(TAG, "SIM state changed: $simState")
         
-        when (simState) {
-            "READY" -> {
-                Log.d(TAG, "SIM card is ready")
-            }
-            
-            "ABSENT" -> {
-                Log.d(TAG, "SIM card removed")
-            }
-            
-            "LOCKED" -> {
-                Log.d(TAG, "SIM card is locked")
-            }
+        if ("READY" == simState) {
+            Log.i(TAG, "SIM card is ready, ensuring RCS service is active")
+            startRcsService(context)
+        }
+    }
+
+    private fun startRcsService(context: Context) {
+        try {
+            val serviceIntent = Intent(context, RcsService::class.java)
+            context.startService(serviceIntent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start RCS service", e)
         }
     }
 

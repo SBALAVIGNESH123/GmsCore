@@ -150,8 +150,9 @@ object RcsAutoConfigClient {
                 // Handle XML (both standard and WAP provisioning formats)
                 configurationData.putAll(parseXmlConfiguration(responseBody))
             } else {
-                Log.e(TAG, "Unknown response format (not JSON or XML). Response start: ${responseBody.take(500)}")
-                // Do not attempt to guess or parse unknown formats.
+                val msg = "Unknown response format (not JSON or XML). Response start: ${responseBody.take(100)}"
+                Log.e(TAG, msg)
+                throw IllegalArgumentException(msg)
             }
         } catch (exception: Exception) {
             Log.e(TAG, "Failed to parse auto-config response", exception)

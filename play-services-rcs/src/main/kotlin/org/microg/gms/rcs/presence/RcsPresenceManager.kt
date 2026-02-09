@@ -72,8 +72,32 @@ class RcsPresenceManager(private val context: Context) {
         }
     }
 
+    private val sipClient: org.microg.gms.rcs.sip.RcsSipClient by lazy {
+        org.microg.gms.rcs.di.RcsServiceLocator.getSipClient()
+    }
+
     private suspend fun sendTypingIndicator(conversationId: String, isTyping: Boolean) {
         Log.d(TAG, "Sending typing indicator: $isTyping for $conversationId")
+        
+        val contentType = "application/im-iscomposing+xml"
+        val state = if (isTyping) "active" else "idle"
+        val content = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <isComposing xmlns="urn:ietf:params:xml:ns:im-iscomposing"
+                         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                         xsi:schemaLocation="urn:ietf:params:xml:ns:im-iscomposing iscomposing.xsd">
+                <state>$state</state>
+                <contenttype>text/plain</contenttype>
+                <refresh>60</refresh>
+            </isComposing>
+        """.trimIndent()
+        
+        // diamond-polish: Use actual SIP client to send the indicator, don't just log it.
+        try {
+            sipClient.sendMessage(conversationId, content, contentType)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to send typing indicator", e)
+        }
     }
 
     fun onRemoteTypingReceived(phoneNumber: String, isTyping: Boolean) {

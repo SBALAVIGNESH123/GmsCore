@@ -475,6 +475,8 @@ class RcsSipClient(
         // Currently, we only support standard MD5 Digest auth using the provisioned token.
         if (algorithm.equals("AKAv1-MD5", ignoreCase = true)) {
             Log.e(TAG, "AKAv1-MD5 authentication requested but not supported yet. Need SIM access.")
+            // TODO: Implement SIM Toolkit access for MILENAGE algorithm or use Signed SIP Digest (AppAttest) if required.
+            // See feedback from binutzu regarding iPhone implementation differences.
              return SipRegistrationResult(
                 isSuccessful = false,
                 errorCode = SipErrorCode.AUTH_FAILED,
