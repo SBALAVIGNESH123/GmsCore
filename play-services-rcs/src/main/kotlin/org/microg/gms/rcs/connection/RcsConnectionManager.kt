@@ -26,6 +26,16 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.min
 import kotlin.math.pow
 
+/**
+ * RcsConnectionManager - Manages Device Network Connectivity
+ * 
+ * NOTE: "Connected" in this class means the device has an active Internet connection
+ * (WiFi or Cellular). It does NOT mean the RCS SIP session is active.
+ * 
+ * The RCS SIP session is managed by RcsSipClient and RcsOrchestrator.
+ * This class simply triggers the Orchestrator to attempt SIP connection when
+ * the Internet becomes available.
+ */
 class RcsConnectionManager(private val context: Context) {
 
     companion object {

@@ -21,7 +21,8 @@ object CarrierConfigurationManager {
             carrierName = "T-Mobile US",
             mccMnc = "310260",
             rcsEnabled = true,
-            autoConfigUrl = "https://rcs-acs-prod-us.sandbox.google.com/rcs/config",
+            // Use GSMA standard format instead of hardcoded sandbox Jibe URL
+            autoConfigUrl = "https://config.rcs.mnc260.mcc310.pub.3gppnetwork.org",
             universalProfile = true,
             chatbotSupported = true,
             groupChatSupported = true,
