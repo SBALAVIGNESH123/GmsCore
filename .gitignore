@@ -1,0 +1,12 @@
+# Gradle
+.gradle/
+build/
+**/build/
+
+# Build logs
+build_log*.txt
+*.log
+
+# IntelliJ
+.idea/
+*.iml
